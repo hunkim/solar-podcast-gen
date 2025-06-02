@@ -1,0 +1,38 @@
+rules_version = '2';
+
+// Firebase Storage Security Rules for Podcast Generator
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Individual audio segments - stored in /audio-segments/ folder
+    match /audio-segments/{segmentFile} {
+      // Allow authenticated users to read audio segments
+      allow read: if request.auth != null;
+      
+      // Allow server (Firebase Admin) to create and delete segment files
+      // Note: Admin SDK bypasses these rules, but we include them for clarity
+      allow create, delete: if request.auth != null
+        && segmentFile.matches('.*\\.(wav|mp3|m4a)$')  // Only audio files
+        && request.resource == null || request.resource.size < 50 * 1024 * 1024;  // Max 50MB for segments
+    }
+    
+    // Podcast audio files - stored in /podcasts/ folder
+    match /podcasts/{podcastFile} {
+      // Allow authenticated users to read any podcast audio file
+      allow read: if request.auth != null;
+      
+      // Allow authenticated users to create/upload new podcast files
+      allow create: if request.auth != null
+        && podcastFile.matches('.*\\.(wav|mp3|m4a)$')  // Only audio files
+        && request.resource.size < 100 * 1024 * 1024;  // Max 100MB file size
+      
+      // Allow authenticated users to update/delete podcast files
+      // In production, you might want to restrict this to file owners
+      allow update, delete: if request.auth != null;
+    }
+    
+    // Default rule - deny access to other paths
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+} 
