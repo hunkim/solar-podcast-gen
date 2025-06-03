@@ -1,4 +1,4 @@
-const UPSTAGE_API_KEY = process.env.UPSTAGE_API_KEY || "up_ncaavCBkmSZg5lLjDOgtFeRw80UNK";
+const UPSTAGE_API_KEY = process.env.UPSTAGE_API_KEY;
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";

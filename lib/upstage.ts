@@ -1,6 +1,6 @@
 import FormData from "form-data";
 
-const API_KEY = process.env.NEXT_PUBLIC_UPSTAGE_API_KEY || "up_ncaavCBkmSZg5lLjDOgtFeRw80UNK";
+const API_KEY = process.env.NEXT_PUBLIC_UPSTAGE_API_KEY;
 
 export interface UpstageResponse {
   api: string;
