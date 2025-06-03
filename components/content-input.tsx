@@ -6,16 +6,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { FileText, Upload, Sparkles } from "lucide-react"
+import { FileText, Upload, Sparkles, Eye, Edit3 } from "lucide-react"
 import { FileUpload } from "@/components/file-upload"
 import { UpstageResponse } from "@/lib/upstage"
 
 interface ContentInputProps {
   onGenerate: (data: any) => void
   initialData?: any
+  onContentChange?: (hasContent: boolean) => void
+  onFormDataChange?: (data: any) => void
 }
 
-export function ContentInput({ onGenerate, initialData }: ContentInputProps) {
+export function ContentInput({ onGenerate, initialData, onContentChange, onFormDataChange }: ContentInputProps) {
   const [inputType, setInputType] = useState("text")
   const [textInput, setTextInput] = useState("")
   const [instructions, setInstructions] = useState("")
@@ -23,6 +25,7 @@ export function ContentInput({ onGenerate, initialData }: ContentInputProps) {
     text: string
     originalResponse: UpstageResponse
   } | null>(null)
+  const [previewMode, setPreviewMode] = useState<"preview" | "edit">("preview")
 
   useEffect(() => {
     if (initialData) {
@@ -67,6 +70,15 @@ export function ContentInput({ onGenerate, initialData }: ContentInputProps) {
     onGenerate(data)
   }
 
+  // Auto-trigger generation when form becomes valid
+  useEffect(() => {
+    // Only auto-trigger if initialData is set and form is valid
+    // This prevents auto-triggering when clearing fields or going to new project
+    if (initialData && isFormValid()) {
+      handleGenerate()
+    }
+  }, [initialData]) // Only run when initialData changes, not on every input change
+
   const handleFileProcessed = (text: string, originalResponse: UpstageResponse) => {
     setUploadedDocument({ text, originalResponse })
     setTextInput(text) // Also populate the text area for consistency
@@ -78,6 +90,32 @@ export function ContentInput({ onGenerate, initialData }: ContentInputProps) {
     // Instructions are now optional
     return true
   }
+
+  // Update content availability whenever inputs change
+  useEffect(() => {
+    const isValid = isFormValid();
+    if (onContentChange) {
+      onContentChange(isValid);
+    }
+    
+    // If content is valid and we have a data change callback, send the current form data
+    if (isValid && onFormDataChange) {
+      const data = {
+        inputType,
+        content: inputType === "text" ? textInput : uploadedDocument?.text || "",
+        instructions,
+        timestamp: new Date().toISOString(),
+        ...(inputType === "pdf" && uploadedDocument && {
+          originalDocument: uploadedDocument.originalResponse,
+          documentMetadata: {
+            pages: uploadedDocument.originalResponse.usage.pages,
+            elements: uploadedDocument.originalResponse.elements.length,
+          }
+        })
+      };
+      onFormDataChange(data);
+    }
+  }, [textInput, uploadedDocument, inputType, instructions, onContentChange, onFormDataChange]);
 
   return (
     <div className="space-y-6">
@@ -117,17 +155,48 @@ export function ContentInput({ onGenerate, initialData }: ContentInputProps) {
                   <div className="mt-4 space-y-3">
                     <div className="flex items-center justify-between">
                       <Label htmlFor="extracted-text">Extracted Text Preview</Label>
-                      <div className="text-sm text-gray-500">
-                        {uploadedDocument.originalResponse.usage.pages} page(s), {uploadedDocument.originalResponse.elements.length} elements
+                      <div className="flex items-center gap-2">
+                        <div className="text-sm text-gray-500">
+                          {uploadedDocument.originalResponse.usage.pages} page(s), {uploadedDocument.originalResponse.elements.length} elements
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPreviewMode(previewMode === "preview" ? "edit" : "preview")}
+                          className="flex items-center gap-2"
+                        >
+                          {previewMode === "preview" ? (
+                            <>
+                              <Edit3 className="h-4 w-4" />
+                              Edit
+                            </>
+                          ) : (
+                            <>
+                              <Eye className="h-4 w-4" />
+                              Preview
+                            </>
+                          )}
+                        </Button>
                       </div>
                     </div>
-                    <Textarea
-                      id="extracted-text"
-                      value={uploadedDocument.text}
-                      onChange={(e) => setUploadedDocument(prev => prev ? { ...prev, text: e.target.value } : null)}
-                      className="min-h-[200px]"
-                      placeholder="Extracted text will appear here..."
-                    />
+                    
+                    {previewMode === "preview" ? (
+                      <div className="border rounded-md p-4 min-h-[200px] max-h-[400px] overflow-y-auto bg-white">
+                        <div 
+                          className="prose prose-sm max-w-none"
+                          dangerouslySetInnerHTML={{ __html: uploadedDocument.text }}
+                        />
+                      </div>
+                    ) : (
+                      <Textarea
+                        id="extracted-text"
+                        value={uploadedDocument.text}
+                        onChange={(e) => setUploadedDocument(prev => prev ? { ...prev, text: e.target.value } : null)}
+                        className="min-h-[200px] max-h-[400px]"
+                        placeholder="Extracted text will appear here..."
+                      />
+                    )}
+                    
                     <div className="text-sm text-gray-500">
                       {uploadedDocument.text.length} characters extracted
                       <span className="ml-2 text-blue-600">• You can edit this text before generating content</span>
@@ -155,17 +224,6 @@ Example: Create a 10-minute professional podcast for healthcare professionals. U
             Leave blank to use default settings or specify your preferences
           </div>
         </div>
-
-        {/* Generate Button */}
-        <Button 
-          onClick={handleGenerate} 
-          disabled={!isFormValid()} 
-          className="w-full" 
-          size="lg"
-        >
-          <Sparkles className="w-4 h-4 mr-2" />
-          Generate Podcast Script
-        </Button>
       </div>
     </div>
   )

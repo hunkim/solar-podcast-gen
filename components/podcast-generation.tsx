@@ -141,6 +141,15 @@ export function PodcastGeneration({
     }
   }, [existingScript, existingGenerationId, onComplete])
 
+  // Auto-start generation when component mounts with new content (no existing script)
+  useEffect(() => {
+    // Only auto-start if we have content but no existing script and haven't started yet
+    if (content && !existingScript && !generationInitiatedRef.current && !state.isGenerating) {
+      generationInitiatedRef.current = true
+      startGeneration()
+    }
+  }, [content, existingScript]) // Only depend on content and existingScript
+
   // Generate title from content using LLM
   const generateTitle = async (): Promise<string> => {
     try {
@@ -548,26 +557,6 @@ export function PodcastGeneration({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Show generate button when not generating and no script exists */}
-          {!state.isGenerating && !state.finalScript && !state.progress && (
-            <div className="text-center space-y-4">
-              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                <h3 className="font-semibold text-blue-900 mb-2">Ready to Generate Podcast Script</h3>
-                <p className="text-sm text-blue-700 mb-4">
-                  Click the button below to start generating your AI-powered podcast script with research and optimization.
-                </p>
-                <Button 
-                  onClick={startGeneration}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2"
-                  size="lg"
-                >
-                  <Wand2 className="w-4 h-4 mr-2" />
-                  Generate Podcast Script
-                </Button>
-              </div>
-            </div>
-          )}
-
           {/* Overall Progress */}
           {state.progress && (
             <div className="space-y-2">
@@ -1030,9 +1019,13 @@ export function PodcastGeneration({
                           <Separator className="mb-6" />
                           <AudioGeneration 
                             script={editedScript || state.finalScript || ""} 
+                            generationId={state.generationId || existingGenerationId || undefined}
                             onComplete={(audioUrl) => {
                               setIsAudioGenerating(false)
-                              // Could trigger a refresh of the library or other actions
+                              // Notify parent component that audio generation is complete
+                              if (onComplete && state.finalScript) {
+                                onComplete(state.finalScript, state.generationId || existingGenerationId || undefined)
+                              }
                             }}
                           />
                         </div>

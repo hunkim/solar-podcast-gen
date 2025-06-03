@@ -33,7 +33,8 @@ import {
   Edit3,
   Save,
   X,
-  MoreVertical
+  MoreVertical,
+  Volume2
 } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
 import { getUserStats, deleteGeneration, updateGenerationTitle, type GenerationRecord, type UserStats } from "@/lib/firestore"
@@ -187,7 +188,7 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ isOpen, onToggle,
       
       // If the deleted item was selected, clear selection
       if (selectedProject === itemToDelete) {
-        onSelectProject('')
+        onNewProject(); // Use onNewProject instead of onSelectProject with empty string
       }
     } catch (error) {
       console.error("Error deleting generation:", error)
@@ -469,9 +470,25 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ isOpen, onToggle,
                     </div>
                     
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-500">
-                        {formatDate(generation.createdAt)}
-                      </span>
+                      <div className="flex items-center">
+                        <span className="text-xs text-gray-500">
+                          {formatDate(generation.createdAt)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {generation.status === 'completed' && generation.result?.finalScript && (
+                          <Badge variant="outline" className="text-xs px-1 py-0 h-4 border-blue-300 text-blue-700">
+                            <FileText className="w-3 h-3 mr-1" />
+                            Script
+                          </Badge>
+                        )}
+                        {generation.result?.audioUrl && (
+                          <Badge variant="outline" className="text-xs px-1 py-0 h-4 border-green-300 text-green-700">
+                            <Volume2 className="w-3 h-3 mr-1" />
+                            Audio
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}

@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { CheckCircle, Plus, ArrowLeft, Play, Download, Copy, Mic, FileText, Loader2, Edit3, Save } from "lucide-react"
+import { CheckCircle, Plus, ArrowLeft, Play, Download, Copy, Mic, FileText, Loader2, Edit3, Save, Calendar, Volume2, Sparkles } from "lucide-react"
 import { getGeneration, type GenerationRecord, saveGenerationResult } from "@/lib/firestore"
 import { AudioGeneration } from "@/components/audio-generation"
 import { Badge } from "@/components/ui/badge"
@@ -37,12 +37,17 @@ export function MainContent({ selectedProject, onNewProject, sidebarOpen }: Main
   const [editedScript, setEditedScript] = useState<string | null>(null)
   const [isEditingScript, setIsEditingScript] = useState(false)
 
+  // State for tracking input content for button activation
+  const [hasContent, setHasContent] = useState(false)
+  const [inputFormData, setInputFormData] = useState<any>(null)
+
   // Load project data when selectedProject changes
   useEffect(() => {
     if (selectedProject) {
       loadProjectData(selectedProject)
     } else {
       // Clear ALL project data when going back to new project
+      // We need to reset all state variables to prevent prefilled fields
       setGenerationData(null)
       setIsGenerating(false)
       setFinalScript(null)
@@ -53,6 +58,8 @@ export function MainContent({ selectedProject, onNewProject, sidebarOpen }: Main
       setShowAudioGeneration(false)
       setEditedScript(null)
       setIsEditingScript(false)
+      // Force a restart to clear any retained data in child components
+      setRestartKey(prev => prev + 1)
     }
   }, [selectedProject])
 
@@ -106,6 +113,7 @@ export function MainContent({ selectedProject, onNewProject, sidebarOpen }: Main
   }
 
   const handleGenerate = (data: any) => {
+    setInputFormData(data)
     setGenerationData(data)
     setIsGenerating(true)
     setFinalScript(null)
@@ -129,9 +137,91 @@ export function MainContent({ selectedProject, onNewProject, sidebarOpen }: Main
   }
 
   const formatDate = (timestamp: any) => {
-    if (!timestamp) return 'Unknown'
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp)
-    return date.toLocaleDateString()
+    try {
+      if (!timestamp) {
+        return 'Unknown'
+      }
+      
+      let date: Date
+      
+      // Handle Firestore Timestamp objects
+      if (timestamp && typeof timestamp.toDate === 'function') {
+        date = timestamp.toDate()
+      } 
+      // Handle Firestore Timestamp with seconds and nanoseconds
+      else if (timestamp && timestamp.seconds) {
+        date = new Date(timestamp.seconds * 1000)
+      }
+      // Handle ISO string dates
+      else if (typeof timestamp === 'string') {
+        date = new Date(timestamp)
+      }
+      // Handle numeric timestamps
+      else if (typeof timestamp === 'number') {
+        date = new Date(timestamp)
+      }
+      // Handle Date objects
+      else if (timestamp instanceof Date) {
+        date = timestamp
+      }
+      else {
+        return 'Unknown'
+      }
+
+      // Validate that we have a valid date
+      if (isNaN(date.getTime())) {
+        return 'Unknown'
+      }
+
+      const now = new Date()
+      const diff = now.getTime() - date.getTime()
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+      
+      // Format time for recent dates
+      const timeOptions: Intl.DateTimeFormatOptions = { 
+        hour: 'numeric', 
+        minute: '2-digit',
+        hour12: true 
+      }
+      const time = date.toLocaleTimeString('en-US', timeOptions)
+      
+      if (days === 0) {
+        // Show "Today, 2:30 PM"
+        return `Today, ${time}`
+      }
+      if (days === 1) {
+        // Show "Yesterday, 2:30 PM"
+        return `Yesterday, ${time}`
+      }
+      if (days < 7) {
+        // Show "3 days ago (Dec 15, 2:30 PM)"
+        const dateStr = date.toLocaleDateString('en-US', { 
+          month: 'short', 
+          day: 'numeric' 
+        })
+        return `${days} days ago (${dateStr}, ${time})`
+      }
+      if (days < 30) {
+        // Show "2 weeks ago (Dec 8)"
+        const dateStr = date.toLocaleDateString('en-US', { 
+          month: 'short', 
+          day: 'numeric' 
+        })
+        return `${Math.floor(days / 7)} weeks ago (${dateStr})`
+      }
+      // For older dates, show full date
+      return date.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      })
+    } catch (error) {
+      console.error('Error formatting date:', error)
+      return 'Unknown'
+    }
   }
 
   // Show existing project - SIMPLE DATABASE VIEW
@@ -180,25 +270,28 @@ export function MainContent({ selectedProject, onNewProject, sidebarOpen }: Main
       <div className="flex-1 overflow-auto">
         <div className="max-w-4xl mx-auto p-6 space-y-6">
           {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <Button onClick={onNewProject} variant="outline" size="sm">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back
-            </Button>
-            <div className="text-sm text-gray-500">
-              Created {formatDate(projectData.createdAt)}
-            </div>
-          </div>
-
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            <h1 className="text-3xl font-bold text-gray-900 mb-3">
               {projectData.title}
             </h1>
-            <p className="text-gray-600">
-              Project Status: {projectData.status === 'completed' ? 'Complete' : 
-                              projectData.status === 'in_progress' ? 'In Progress' : 
-                              'Pending'}
-            </p>
+            <div className="flex items-center justify-center gap-3">
+              <Badge variant="outline" className="text-xs px-2 py-1 border-purple-300 text-purple-700">
+                <Calendar className="w-3 h-3 mr-1" />
+                {formatDate(projectData.createdAt)}
+              </Badge>
+              {projectData.status === 'completed' && (
+                <Badge variant="outline" className="text-xs px-2 py-1 border-blue-300 text-blue-700">
+                  <FileText className="w-3 h-3 mr-1" />
+                  Script
+                </Badge>
+              )}
+              {projectData.result?.audioUrl && (
+                <Badge variant="outline" className="text-xs px-2 py-1 border-green-300 text-green-700">
+                  <Volume2 className="w-3 h-3 mr-1" />
+                  Audio
+                </Badge>
+              )}
+            </div>
           </div>
 
           {/* User Input */}
@@ -441,17 +534,6 @@ export function MainContent({ selectedProject, onNewProject, sidebarOpen }: Main
                 <div className="flex gap-3 mb-4">
                   <Button 
                     onClick={() => {
-                      const audio = new Audio(projectData.result?.audioUrl)
-                      audio.play()
-                    }}
-                    className="bg-green-600 hover:bg-green-700"
-                    size="sm"
-                  >
-                    <Play className="w-4 h-4 mr-2" />
-                    Play Audio
-                  </Button>
-                  <Button 
-                    onClick={() => {
                       if (projectData.result?.audioUrl) {
                         const a = document.createElement("a")
                         a.href = projectData.result.audioUrl
@@ -543,9 +625,27 @@ export function MainContent({ selectedProject, onNewProject, sidebarOpen }: Main
             </CardHeader>
             <CardContent>
               <ContentInput 
-                onGenerate={handleGenerate}
-                initialData={generationData} // Pass existing data to pre-populate form
+                key={`content-input-${restartKey}`} 
+                onGenerate={(data) => setInputFormData(data)}
+                initialData={null} // Always start with null data for a new project
+                onContentChange={setHasContent}
+                onFormDataChange={setInputFormData}
               />
+              <div className="mt-8 text-center">
+                <h3 className="text-xl font-semibold mb-2">Ready to Generate Podcast Script</h3>
+                <p className="text-gray-600 mb-4">
+                  Click the button below to start generating your AI-powered podcast script with research and optimization.
+                </p>
+                <Button 
+                  onClick={() => inputFormData && handleGenerate(inputFormData)} 
+                  disabled={!hasContent}
+                  className="bg-blue-600 hover:bg-blue-700 px-6"
+                  size="lg"
+                >
+                  <Sparkles className="w-5 h-5 mr-2" />
+                  Generate Podcast Script
+                </Button>
+              </div>
             </CardContent>
           </Card>
 

@@ -61,22 +61,25 @@ export async function parseDocument(file: File): Promise<UpstageResponse> {
 }
 
 export function extractTextFromUpstageResponse(response: UpstageResponse): string {
-  // Extract text from the content.text field first, fall back to HTML if needed
-  if (response.content.text && response.content.text.trim()) {
-    return response.content.text;
+  // Extract HTML content first to preserve table and structured information
+  if (response.content.html && response.content.html.trim()) {
+    return response.content.html.trim();
   }
   
-  // If no direct text, extract from HTML content
-  if (response.content.html) {
-    // Simple HTML to text conversion (remove tags)
-    return response.content.html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+  // Fall back to markdown if HTML is not available
+  if (response.content.markdown && response.content.markdown.trim()) {
+    return response.content.markdown.trim();
+  }
+  
+  // Fall back to plain text if neither HTML nor markdown is available
+  if (response.content.text && response.content.text.trim()) {
+    return response.content.text.trim();
   }
 
-  // Last resort: extract from elements
+  // Last resort: extract HTML from elements to preserve structure
   return response.elements
-    .map(element => element.content.text || element.content.html.replace(/<[^>]*>/g, ''))
-    .filter(text => text.trim())
-    .join(' ')
-    .replace(/\s+/g, ' ')
+    .map(element => element.content.html || element.content.markdown || element.content.text)
+    .filter(content => content && content.trim())
+    .join('\n')
     .trim();
 } 

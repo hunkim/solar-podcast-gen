@@ -642,13 +642,15 @@ Write a fun, engaging 3-minute tiki-taka conversation script using the A:/B: for
     console.log(`Total content length: ${allContentLength} characters`);
     
     // Determine optimal token limit based on content size
-    let maxTokens = 8000;
+    let maxTokens = 10000; // Increased default for better quality
     if (allContentLength > 50000) {
-      maxTokens = 12000; // Increase for very large content
-      console.log("Large content detected, increasing token limit to 12000");
-    } else if (allContentLength < 20000) {
-      maxTokens = 6000; // Reduce for smaller content  
-      console.log("Moderate content size, using 6000 token limit");
+      maxTokens = 15000; // Increased for very large content
+      console.log("Large content detected, increasing token limit to 15000");
+    } else if (allContentLength < 15000) {
+      maxTokens = 8000; // Increased minimum for small content  
+      console.log("Small content size, using 8000 token limit");
+    } else {
+      console.log("Moderate content size, using 10000 token limit");
     }
 
     const systemPrompt = `You are a professional podcast script compiler. Your job is to take individual section scripts and compile them into one cohesive, complete podcast script.
