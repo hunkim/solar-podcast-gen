@@ -1,0 +1,33 @@
+{
+  "name": "Video Podcast Generator",
+  "short_name": "PodcastGen",
+  "description": "Transform documents and text into engaging video and podcast content using AI",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#3B82F6",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "32x32",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "/podcast-icon.svg",
+      "sizes": "64x64",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "entertainment", "multimedia"],
+  "lang": "en",
+  "scope": "/",
+  "screenshots": []
+} 
