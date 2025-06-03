@@ -26,6 +26,7 @@ export function MainContent({ selectedProject, onNewProject, sidebarOpen }: Main
   const [finalScript, setFinalScript] = useState<string | null>(null)
   const [generationId, setGenerationId] = useState<string | null>(null)
   const [restartKey, setRestartKey] = useState(0)
+  const [showGenerationComponent, setShowGenerationComponent] = useState(false)
   
   // Project view states
   const [projectData, setProjectData] = useState<GenerationRecord | null>(null)
@@ -40,6 +41,9 @@ export function MainContent({ selectedProject, onNewProject, sidebarOpen }: Main
   // State for tracking input content for button activation
   const [hasContent, setHasContent] = useState(false)
   const [inputFormData, setInputFormData] = useState<any>(null)
+
+  // State for controlling generation component in history view
+  const [showHistoryGeneration, setShowHistoryGeneration] = useState(false)
 
   // Load project data when selectedProject changes
   useEffect(() => {
@@ -60,6 +64,8 @@ export function MainContent({ selectedProject, onNewProject, sidebarOpen }: Main
       setIsEditingScript(false)
       // Force a restart to clear any retained data in child components
       setRestartKey(prev => prev + 1)
+      // Reset history generation state
+      setShowHistoryGeneration(false)
     }
   }, [selectedProject])
 
@@ -118,7 +124,7 @@ export function MainContent({ selectedProject, onNewProject, sidebarOpen }: Main
     setIsGenerating(true)
     setFinalScript(null)
     setGenerationId(null)
-    setRestartKey(prev => prev + 1)
+    setShowGenerationComponent(true)
   }
 
   const handleGenerationComplete = (script: string, id?: string) => {
@@ -133,7 +139,18 @@ export function MainContent({ selectedProject, onNewProject, sidebarOpen }: Main
     setIsGenerating(false)
     setFinalScript(null)
     setGenerationId(null)
+    setShowGenerationComponent(false)
     setRestartKey(prev => prev + 1)
+  }
+
+  const handleGenerationStop = () => {
+    // Only clear the generation-specific state, preserve input data
+    setIsGenerating(false)
+    setFinalScript(null)
+    setGenerationId(null)
+    setShowGenerationComponent(false)
+    // Keep generationData and inputFormData so user can regenerate easily
+    // Don't reset restartKey here - it causes ContentInput to remount and lose hasContent state
   }
 
   const formatDate = (timestamp: any) => {
@@ -493,18 +510,54 @@ export function MainContent({ selectedProject, onNewProject, sidebarOpen }: Main
             </Card>
           )}
 
-          {/* Podcast Generation - Always show if no script exists */}
-          {!projectData.result?.finalScript && (
+          {/* Podcast Generation - Show button if no script exists, show component only when button clicked */}
+          {!projectData.result?.finalScript && !showHistoryGeneration && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-medium">
+                    2
+                  </div>
+                  Generate Podcast Script
+                </CardTitle>
+                <CardDescription>
+                  Create an AI-powered podcast script with research and optimization
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="text-center py-8">
+                <p className="text-gray-600 mb-6">
+                  {finalScript ? 
+                    "Generation was stopped. Click the button below to restart and complete your podcast script." :
+                    "Your content is ready. Click the button below to generate a podcast script with AI-powered research and writing."
+                  }
+                </p>
+                <Button 
+                  onClick={() => setShowHistoryGeneration(true)}
+                  className="bg-blue-600 hover:bg-blue-700 px-6"
+                  size="lg"
+                >
+                  <Sparkles className="w-5 h-5 mr-2" />
+                  {finalScript ? "Restart Generation" : "Generate Podcast Script"}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Podcast Generation Component - Only show when button clicked */}
+          {!projectData.result?.finalScript && showHistoryGeneration && (
             <PodcastGeneration
               key={`project-generation-${projectData.id}`}
               content={projectData.content.originalContent}
               instructions={projectData.content.instructions}
               inputType={projectData.content.inputType}
               documentMetadata={projectData.content.documentMetadata}
+              autoStart={false}
+              startImmediately={true}
               onComplete={(script, id) => {
                 setFinalScript(script)
                 setGenerationId(id || null)
                 setIsGenerating(false)
+                setShowHistoryGeneration(false)
                 // Reload project data to show updated script
                 loadProjectData(selectedProject)
               }}
@@ -512,6 +565,12 @@ export function MainContent({ selectedProject, onNewProject, sidebarOpen }: Main
                 setGenerationData(null)
                 setIsGenerating(false)
                 setFinalScript(null)
+                setShowHistoryGeneration(false)
+              }}
+              onStop={() => {
+                // For project view, hide the generation component but keep it available to restart
+                setIsGenerating(false)
+                setShowHistoryGeneration(false)
               }}
               existingScript={finalScript}
               existingGenerationId={generationId}
@@ -638,7 +697,7 @@ export function MainContent({ selectedProject, onNewProject, sidebarOpen }: Main
                 </p>
                 <Button 
                   onClick={() => inputFormData && handleGenerate(inputFormData)} 
-                  disabled={!hasContent}
+                  disabled={!hasContent || !inputFormData}
                   className="bg-blue-600 hover:bg-blue-700 px-6"
                   size="lg"
                 >
@@ -649,8 +708,8 @@ export function MainContent({ selectedProject, onNewProject, sidebarOpen }: Main
             </CardContent>
           </Card>
 
-          {/* Simple Generation Component - Only show when generating or complete */}
-          {generationData && (
+          {/* Simple Generation Component - Only show when showGenerationComponent is true */}
+          {showGenerationComponent && generationData && (
             <PodcastGeneration
               key={selectedProject ? `project-${selectedProject}` : restartKey}
               content={generationData.content}
@@ -659,13 +718,14 @@ export function MainContent({ selectedProject, onNewProject, sidebarOpen }: Main
               documentMetadata={generationData.documentMetadata}
               onComplete={handleGenerationComplete}
               onRestart={handleStartNew}
+              onStop={handleGenerationStop}
               existingScript={finalScript} // Pass existing script if available
               existingGenerationId={generationId} // Pass existing ID if available
             />
           )}
 
-          {/* No content state */}
-          {!generationData && (
+          {/* No content state - only show when no generation component and no form data */}
+          {!showGenerationComponent && !hasContent && (
             <div className="text-center py-12 text-gray-500">
               <Plus className="w-12 h-12 mx-auto mb-4 text-gray-400" />
               <p>Start by entering your content above to generate a new podcast script</p>

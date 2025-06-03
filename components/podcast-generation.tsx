@@ -44,8 +44,11 @@ interface PodcastGenerationProps {
   documentMetadata?: any
   onComplete?: (script: string, generationId?: string) => void
   onRestart?: () => void
+  onStop?: () => void
   existingScript?: string | null
   existingGenerationId?: string | null
+  autoStart?: boolean
+  startImmediately?: boolean
 }
 
 interface GenerationState {
@@ -76,8 +79,11 @@ export function PodcastGeneration({
   documentMetadata,
   onComplete,
   onRestart,
+  onStop,
   existingScript,
-  existingGenerationId
+  existingGenerationId,
+  autoStart = true,
+  startImmediately = false
 }: PodcastGenerationProps) {
   const { user } = useAuth()
   
@@ -143,12 +149,15 @@ export function PodcastGeneration({
 
   // Auto-start generation when component mounts with new content (no existing script)
   useEffect(() => {
-    // Only auto-start if we have content but no existing script and haven't started yet
+    // Only auto-start if we have content but no existing script and haven't started yet AND autoStart is enabled
+    // OR if startImmediately is true (manual trigger from button)
     if (content && !existingScript && !generationInitiatedRef.current && !state.isGenerating) {
-      generationInitiatedRef.current = true
-      startGeneration()
+      if (autoStart || startImmediately) {
+        generationInitiatedRef.current = true
+        startGeneration()
+      }
     }
-  }, [content, existingScript]) // Only depend on content and existingScript
+  }, [content, existingScript, autoStart, startImmediately]) // Add startImmediately to dependencies
 
   // Generate title from content using LLM
   const generateTitle = async (): Promise<string> => {
@@ -456,10 +465,11 @@ export function PodcastGeneration({
       }
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
+        console.log("🛑 Generation was cancelled by user");
         setState(prev => ({
           ...prev,
           isGenerating: false,
-          error: "Generation cancelled",
+          error: null, // Don't show "cancelled" as an error - it's expected
         }))
       } else {
         setState(prev => ({
@@ -467,19 +477,19 @@ export function PodcastGeneration({
           isGenerating: false,
           error: error instanceof Error ? error.message : "Unknown error occurred",
         }))
-      }
 
-      // Update error in Firestore
-      if (user && generationId) {
-        try {
-          await updateGenerationProgress(generationId, {
-            stage: "finalizing",
-            step: "Error occurred",
-            progress: 100,
-            error: error instanceof Error ? error.message : "Unknown error occurred",
-          })
-        } catch (firestoreError) {
-          console.error("Failed to update error in Firestore:", firestoreError)
+        // Update error in Firestore only for actual errors, not cancellations
+        if (user && generationId) {
+          try {
+            await updateGenerationProgress(generationId, {
+              stage: "finalizing",
+              step: "Error occurred",
+              progress: 100,
+              error: error instanceof Error ? error.message : "Unknown error occurred",
+            })
+          } catch (firestoreError) {
+            console.error("Failed to update error in Firestore:", firestoreError)
+          }
         }
       }
     } finally {
@@ -489,9 +499,69 @@ export function PodcastGeneration({
   }
 
   const stopGeneration = () => {
+    console.log("🛑 Stop button pressed, cancelling generation");
+    
+    // Abort the current request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
+      abortControllerRef.current = null
     }
+    
+    // Reset the component state immediately for better UX
+    setState(prev => ({
+      ...prev,
+      isGenerating: false,
+      progress: null,
+      error: null, // Don't show error for user-initiated stop
+      stages: {
+        outline: false,
+        search: false,
+        script: false,
+        combining: false,
+        finalizing: false,
+      },
+      generatedOutline: null,
+      searchKeywords: null,
+      sectionProgress: {}
+    }))
+    
+    // Reset generation flag so it can be restarted
+    generationInitiatedRef.current = false
+    
+    // Notify parent component that generation was stopped
+    if (onStop) {
+      onStop()
+    }
+  }
+
+  // Add restart generation function
+  const restartGeneration = () => {
+    console.log("🔄 Restarting generation");
+    
+    // Reset all state
+    setState(prev => ({
+      ...prev,
+      isGenerating: false,
+      progress: null,
+      finalScript: null,
+      error: null,
+      stages: {
+        outline: false,
+        search: false,
+        script: false,
+        combining: false,
+        finalizing: false,
+      },
+      generatedOutline: null,
+      searchKeywords: null,
+      sectionProgress: {}
+    }))
+    
+    // Reset generation flag and start new generation
+    generationInitiatedRef.current = false
+    setTimeout(() => {
+      startGeneration()
+    }, 100) // Small delay to ensure state is reset
   }
 
   // Function to separate think content from script
@@ -543,17 +613,48 @@ export function PodcastGeneration({
           <CardTitle className="flex items-center gap-2">
             <Wand2 className="w-5 h-5" />
             Generation Progress
-            {state.isGenerating && (
-              <div className="ml-auto flex items-center gap-2">
-                <Button onClick={stopGeneration} variant="destructive" size="sm">
-                  <Pause className="w-4 h-4 mr-2" />
-                  Stop
-                </Button>
-              </div>
-            )}
+            <div className="ml-auto flex items-center gap-2">
+              {state.isGenerating && (
+                <>
+                  <Badge variant="secondary" className="bg-blue-100 text-blue-700">
+                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                    Generating...
+                  </Badge>
+                  <Button onClick={stopGeneration} variant="destructive" size="sm">
+                    <Pause className="w-4 h-4 mr-2" />
+                    Stop
+                  </Button>
+                </>
+              )}
+              {!state.isGenerating && !state.finalScript && (state.progress || state.error) && (
+                <>
+                  <Badge variant="outline" className="bg-gray-100 text-gray-700">
+                    Stopped
+                  </Badge>
+                  <Button onClick={restartGeneration} variant="default" size="sm" className="bg-blue-600 hover:bg-blue-700">
+                    <RotateCcw className="w-4 h-4 mr-2" />
+                    Generate Again
+                  </Button>
+                </>
+              )}
+              {state.finalScript && (
+                <Badge variant="outline" className="bg-green-100 text-green-700">
+                  <CheckCircle className="w-3 h-3 mr-1" />
+                  Complete
+                </Badge>
+              )}
+            </div>
           </CardTitle>
           <CardDescription>
-            AI is creating your podcast script with research and optimization
+            {state.isGenerating ? (
+              "AI is creating your podcast script with research and optimization"
+            ) : state.finalScript ? (
+              "Your podcast script has been generated successfully!"
+            ) : (state.progress || state.error) ? (
+              "Generation was stopped. Click 'Generate Again' to restart."
+            ) : (
+              "Ready to generate your podcast script"
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -918,7 +1019,7 @@ export function PodcastGeneration({
                           </Button>
                           {onRestart && (
                             <Button 
-                              onClick={onRestart}
+                              onClick={restartGeneration}
                               size="sm"
                               className="bg-blue-600 hover:bg-blue-700 text-white"
                             >

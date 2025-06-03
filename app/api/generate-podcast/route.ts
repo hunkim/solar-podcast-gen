@@ -23,19 +23,22 @@ export async function POST(request: NextRequest) {
       async start(controller) {
         const encoder = new TextEncoder();
         let isControllerClosed = false;
+        let isCancelled = false;
         
         const sendEvent = (data: any) => {
-          if (isControllerClosed) {
-            console.log("⚠️ Attempted to send data to closed controller, skipping");
-            return;
+          if (isControllerClosed || isCancelled) {
+            console.log("⚠️ Attempted to send data to closed/cancelled controller, skipping");
+            return false;
           }
           
           try {
             const eventData = `data: ${JSON.stringify(data)}\n\n`;
             controller.enqueue(encoder.encode(eventData));
+            return true;
           } catch (error) {
             console.error("Error sending event:", error);
             isControllerClosed = true;
+            return false;
           }
         };
 
@@ -54,43 +57,59 @@ export async function POST(request: NextRequest) {
         try {
           const generator = new PodcastGenerator();
           
+          // Create abort signal to pass to generator
+          const abortController = new AbortController();
+          
           // Send initial progress
-          sendEvent({
+          if (!sendEvent({
             type: "progress",
             data: {
               stage: "outline",
               step: "Starting podcast generation...",
               progress: 0,
             }
-          });
+          })) {
+            console.log("Failed to send initial progress, stopping");
+            return;
+          }
 
           // Generate the podcast with progress updates
-          for await (const progress of generator.generatePodcastScript(content, finalInstructions)) {
-            if (isControllerClosed) {
-              console.log("🛑 Controller closed, stopping generation");
+          const progressIterator = generator.generatePodcastScript(content, finalInstructions);
+          
+          for await (const progress of progressIterator) {
+            // Check if we should stop
+            if (isControllerClosed || isCancelled) {
+              console.log("🛑 Controller closed or cancelled, stopping generation");
+              abortController.abort();
               break;
             }
             
-            sendEvent({
+            if (!sendEvent({
               type: "progress", 
               data: progress
-            });
+            })) {
+              console.log("Failed to send progress, stopping generation");
+              break;
+            }
             
             // If we have a final result, send it
             if (progress.progress === 100 && progress.result) {
-              sendEvent({
+              if (!sendEvent({
                 type: "complete",
                 data: {
                   script: progress.result,
                   progress: progress,
                   generationId: generationId,
                 }
-              });
+              })) {
+                console.log("Failed to send completion, stopping");
+                break;
+              }
             }
           }
           
-          // Send completion only if not closed
-          if (!isControllerClosed) {
+          // Send completion only if not closed or cancelled
+          if (!isControllerClosed && !isCancelled) {
             sendEvent({
               type: "done",
               data: { message: "Generation complete" }
@@ -99,7 +118,7 @@ export async function POST(request: NextRequest) {
           
         } catch (error) {
           console.error("Error in podcast generation:", error);
-          if (!isControllerClosed) {
+          if (!isControllerClosed && !isCancelled) {
             sendEvent({
               type: "error",
               data: {
@@ -114,6 +133,8 @@ export async function POST(request: NextRequest) {
       
       cancel() {
         console.log("🚫 Stream cancelled by client");
+        // This method is called when the client cancels the stream
+        return Promise.resolve();
       }
     });
 
